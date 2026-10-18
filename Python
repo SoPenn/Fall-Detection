@@ -9,10 +9,10 @@ from ultralytics import YOLO # type: ignore
 
 # ---------------- ตั้งค่า LINE Messaging API และ ImgBB ----------------
 # 1. รหัสฝากรูปฟรีจากเว็บ ImgBB
-IMGBB_API_KEY = ""
+IMGBB_API_KEY = "" #นำ API ของ IMBBตัวเองมาใส่
 
 # 2. รหัสจาก LINE Developers
-LINE_ACCESS_TOKEN = ""
+LINE_ACCESS_TOKEN = "" # นำรหัส access token ใน Line ของตัวเองมาใส่
 LINE_USER_ID = ""  # รหัสประจำตัวคุณ เพื่อให้บอททักหาถูกคน
 
 def send_line_alert(image):
