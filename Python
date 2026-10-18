@@ -5,21 +5,15 @@ import torch # type: ignore
 import time
 import requests # type: ignore
 import threading
-import socket
 from ultralytics import YOLO # type: ignore
 
 # ---------------- ตั้งค่า LINE Messaging API และ ImgBB ----------------
 # 1. รหัสฝากรูปฟรีจากเว็บ ImgBB
-IMGBB_API_KEY = "b4a1ffe18b350068bc1f3c98b90cbfd9"
+IMGBB_API_KEY = ""
 
 # 2. รหัสจาก LINE Developers
-LINE_ACCESS_TOKEN = "Trui7eaIjceIX0f5ctvzMbvbg+fRVK98NykCUh1Humzd/VO4C8SpChCtR38IRzYr8ouHrQpmw0tsI9RWWxd3Mmst5mrE1ZjMlyHg6VC0Rwo5aD+yLxjpXlLNjSx40stygwTGJ800Dll+I2Qo/R+uAwdB04t89/1O/w1cDnyilFU="
-LINE_USER_ID = "Uc5d149696a202a0c22955b91ce7917d8"  # รหัสประจำตัวคุณ เพื่อให้บอททักหาถูกคน
-
-# ตั้งค่าส่งข้อมูลไป LabVIEW
-UDP_IP = "127.0.0.1"
-UDP_PORT = 5005
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+LINE_ACCESS_TOKEN = ""
+LINE_USER_ID = ""  # รหัสประจำตัวคุณ เพื่อให้บอททักหาถูกคน
 
 def send_line_alert(image):
     """ฟังก์ชันอัปโหลดรูปขึ้น ImgBB และส่งลิงก์เข้า LINE (ทำงานเบื้องหลัง)"""
@@ -30,7 +24,8 @@ def send_line_alert(image):
         imgbb_payload = {"key": IMGBB_API_KEY}
         imgbb_files = {"image": img_encoded.tobytes()}
         
-        res = requests.post(imgbb_url, data=imgbb_payload, files=imgbb_files)
+        # ใส่ timeout=10 ป้องกันโปรแกรมค้างเวลาเน็ตมีปัญหา
+        res = requests.post(imgbb_url, data=imgbb_payload, files=imgbb_files, timeout=10)
         image_url = res.json()["data"]["url"]  # ได้ลิงก์รูปมาแล้ว
 
         # 2. นำลิงก์รูปไปส่งเข้า LINE Messaging API
@@ -53,7 +48,7 @@ def send_line_alert(image):
                 }
             ]
         }
-        requests.post(line_url, headers=headers, json=data)
+        requests.post(line_url, headers=headers, json=data, timeout=10)
         print("✅ ส่งรูปแจ้งเตือนเข้า LINE สำเร็จ!")
     except Exception as e:
         print(f"❌ ส่ง LINE ไม่สำเร็จ: {e}")
@@ -132,134 +127,3 @@ while cap.isOpened():
 
             if high_conf_kpts < 4 or top5_mean_conf < 0.8:
                 continue
-
-            nose = kpts[0]
-            left_shoulder = kpts[5]
-            right_shoulder = kpts[6]
-            left_hip = kpts[11]
-            right_hip = kpts[12]
-            left_knee = kpts[13]
-            right_knee = kpts[14]
-
-            hip_detected = left_hip[1] > 0 or right_hip[1] > 0
-            shoulder_detected = left_shoulder[1] > 0 and right_shoulder[1] > 0
-
-            is_falling = False
-
-            if shoulder_detected and hip_detected:
-                mid_shoulder_x = (left_shoulder[0] + right_shoulder[0]) / 2
-                mid_shoulder_y = (left_shoulder[1] + right_shoulder[1]) / 2
-                
-                is_head_upright = (nose[1] > 0) and (nose[1] < mid_shoulder_y - 20)
-
-                if left_hip[1] > 0 and right_hip[1] > 0:
-                    mid_hip_x = (left_hip[0] + right_hip[0]) / 2
-                    mid_hip_y = (left_hip[1] + right_hip[1]) / 2
-                elif left_hip[1] > 0:
-                    mid_hip_x, mid_hip_y = left_hip[0], left_hip[1]
-                else:
-                    mid_hip_x, mid_hip_y = right_hip[0], right_hip[1]
-
-                dx = abs(mid_shoulder_x - mid_hip_x)
-                dy = abs(mid_shoulder_y - mid_hip_y)
-                angle = math.degrees(math.atan2(dy, dx)) if dx != 0 else 90
-
-                is_spine_horizontal = (angle < 35) and (dx > 20) and not is_head_upright
-                is_body_collapsed = (dy < (box_h * 0.25)) and not is_head_upright
-                is_box_horizontal = box_w > (box_h * 1.05)
-
-                knee_x, knee_y = 0, 0
-                if left_knee[1] > 0 and right_knee[1] > 0:
-                    knee_x = (left_knee[0] + right_knee[0]) / 2
-                    knee_y = (left_knee[1] + right_knee[1]) / 2
-                elif left_knee[1] > 0:
-                    knee_x, knee_y = left_knee[0], left_knee[1]
-                elif right_knee[1] > 0:
-                    knee_x, knee_y = right_knee[0], right_knee[1]
-
-                leg_angle = 90
-                dx_leg = 0
-                if knee_y > 0:
-                    dx_leg = abs(mid_hip_x - knee_x)
-                    dy_leg = abs(mid_hip_y - knee_y)
-                    leg_angle = math.degrees(math.atan2(dy_leg, dx_leg)) if dx_leg != 0 else 90
-
-                is_diagonal_fall = (angle < 55) and (leg_angle < 45) and not is_head_upright
-                is_horizontal_leg_spread = is_box_horizontal and (leg_angle < 55 or dx_leg > (box_w * 0.25)) and not is_head_upright
-                is_crawling_collapse = (dy < box_h * 0.35) and (box_w > box_h * 0.85) and (dx > 20)
-                is_headfirst_fall = mid_shoulder_y > mid_hip_y
-
-                if (
-                    is_spine_horizontal
-                    or is_diagonal_fall
-                    or is_horizontal_leg_spread
-                    or is_crawling_collapse
-                    or is_headfirst_fall 
-                    or ((angle < 45 or is_body_collapsed) and is_box_horizontal and not is_head_upright) 
-                ):
-                    is_falling = True
-                    any_person_falling = True
-
-            elif shoulder_detected and not hip_detected:
-                mid_shoulder_y = (left_shoulder[1] + right_shoulder[1]) / 2
-                if (nose[1] > mid_shoulder_y - 10) and (box_w > box_h * 1.25):
-                    is_falling = True
-                    any_person_falling = True
-
-            if is_falling:
-                label = f"FALL DETECTED! ({conf:.2f})"
-                color = (0, 0, 255)
-            else:
-                label = f"Normal ({conf:.2f})"
-                color = (0, 255, 0)
-
-            if SHOW_SKELETON:
-                for p1_idx, p2_idx in SKELETON_PAIRS:
-                    pt1 = kpts[p1_idx]
-                    pt2 = kpts[p2_idx]
-                    if pt1[0] > 0 and pt1[1] > 0 and pt2[0] > 0 and pt2[1] > 0:
-                        conf1 = kpts_confs[i][p1_idx] if kpts_confs is not None else 1.0
-                        conf2 = kpts_confs[i][p2_idx] if kpts_confs is not None else 1.0
-                        if conf1 > 0.15 and conf2 > 0.15:
-                            cv2.line(annotated_frame, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (0, 255, 255), 2)
-
-                for p_idx, pt in enumerate(kpts):
-                    if pt[0] > 0 and pt[1] > 0:
-                        p_conf = kpts_confs[i][p_idx] if kpts_confs is not None else 1.0
-                        if p_conf > 0.15:
-                            cv2.circle(annotated_frame, (int(pt[0]), int(pt[1])), 4, (0, 165, 255), -1)
-
-            cv2.rectangle(annotated_frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-            cv2.putText(annotated_frame, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    # ---------------- ระบบนับเวลา 1.5 วินาที ส่ง LINE และ LabVIEW ----------------
-    if any_person_falling:
-        if fall_start_time == 0:
-            fall_start_time = time.time()
-        else:
-            elapsed_time = time.time() - fall_start_time
-            if elapsed_time >= 1.5 and not is_alert_sent:
-                # แยก Thread ส่งรูปเพื่อไม่ให้วิดีโอค้าง
-                threading.Thread(target=send_line_alert, args=(annotated_frame.copy(),)).start()
-                is_alert_sent = True
-                
-        sock.sendto(b"FALL", (UDP_IP, UDP_PORT))
-    else:
-        fall_start_time = 0
-        is_alert_sent = False
-        sock.sendto(b"NORMAL", (UDP_IP, UDP_PORT))
-    # ----------------------------------------------------------------------
-
-    status_text = "Skeleton: ON" if SHOW_SKELETON else "Skeleton: OFF"
-    cv2.putText(annotated_frame, f"{status_text} (Spacebar)", (15, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0) if SHOW_SKELETON else (0, 0, 255), 2)
-
-    cv2.imshow("Fall Detection", annotated_frame)
-
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord("q") or key == ord("Q"):
-        break
-    elif key == 32:
-        SHOW_SKELETON = not SHOW_SKELETON
-
-cap.release()
-cv2.destroyAllWindows()
